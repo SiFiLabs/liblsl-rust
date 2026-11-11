@@ -5,7 +5,6 @@ authors = ["Intheon <contact@intheon.io>", "Christian Kothe <christian.kothe@int
 edition = "2021"
 description = "Lab streaming layer (liblsl) bindings for rust."
 repository = "https://github.com/SiFiLabs/liblsl-rust"
-publish = false
 license = "MIT"
 keywords = ["lsl", "streaming", "protocol", "ffi", "bindings"]
 categories = ["api-bindings", "network-programming"]

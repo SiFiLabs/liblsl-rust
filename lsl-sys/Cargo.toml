@@ -5,7 +5,6 @@ authors = ["Intheon <contact@intheon.io>", "Christian Kothe <christian.kothe@int
 edition = "2021"
 description = "Low-level bindings to the system liblsl library (lab streaming layer)."
 repository = "https://github.com/SiFiLabs/liblsl-rust"
-publish = false
 license = "MIT"
 keywords = ["lsl", "ffi"]
 categories = ["external-ffi-bindings"]
