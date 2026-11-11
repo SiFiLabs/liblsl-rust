@@ -1,6 +1,6 @@
 # Rust bindings for the liblsl library
 
-> SiFi Labs fork of [labstreaminglayer/liblsl-rust](https://github.com/labstreaminglayer/liblsl-rust),
+> SiFi Labs fork of [labstreaminglayer/liblsl-rust](https://github.com/labstreaminglayer/liblsl-rust).
 > Not published to crates.io; depend on it via git (see below).
 > Version 0.2 changed the API substantially; see `CHANGELOG.md`.
 
