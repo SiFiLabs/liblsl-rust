@@ -1,7 +1,7 @@
 # Rust bindings for the liblsl library
 
 > SiFi Labs fork of [labstreaminglayer/liblsl-rust](https://github.com/labstreaminglayer/liblsl-rust),
-> which is no longer maintained. Not published to crates.io; depend on it via git (see below).
+> Not published to crates.io; depend on it via git (see below).
 > Version 0.2 changed the API substantially; see `CHANGELOG.md`.
 
 Safe high-level bindings for the `liblsl` library, the main network library of
