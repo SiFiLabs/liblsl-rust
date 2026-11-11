@@ -1,8 +1,6 @@
 /** Example program that shows several advanced capabilities when reading data. */
-use lsl;
 use lsl::Pullable; // trait used by the inlet // for user input
 use std::io;
-use std::vec;
 
 fn main() -> Result<(), lsl::Error> {
     println!("Resolving EEG stream...");
@@ -22,15 +20,13 @@ fn main() -> Result<(), lsl::Error> {
     // now that we have the inlet we can use it to retrieve the full StreamInfo object from it
     // (since custom meta-data could in theory be gigabytes, this is not transmitted by the resolve
     // call)
-    let mut info = inl.info(5.0)?;
+    let info = inl.info(5.0)?;
 
     // we can now traverse the extended meta-data of the stream to get the information we need
     // (usually we'll want at least the channel labels, which are typically stored as below)
     println!("\nThe channel labels were:");
-    let mut cursor = info.desc().child("channels").child("channel");
-    while cursor.is_valid() {
-        print!("  {}", cursor.child_value_named("label"));
-        cursor = cursor.next_sibling();
+    for channel in info.desc().child("channels").children() {
+        print!("  {}", channel.child_value_named("label"));
     }
     // ... alternatively we could get an XML string and parse it using some other tool
     println!("\n\nThe StreamInfo's full XML dump is: {}", info.to_xml()?);
@@ -49,7 +45,7 @@ fn main() -> Result<(), lsl::Error> {
 
     // now we're reading data in a loop and print it as we go
     println!("Reading data...");
-    let mut sample = vec::Vec::<f32>::new();
+    let mut sample = Vec::<f32>::new();
     loop {
         // do a blocking read (with finite timeout) to get the next successive sample and its
         // time stamp; we read into a pre-allocated buffer (which will be right-sized by the pull

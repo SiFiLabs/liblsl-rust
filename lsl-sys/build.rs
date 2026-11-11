@@ -1,9 +1,44 @@
 use std::env;
+use std::path::{Path, PathBuf};
 
 fn main() {
-    // TODO: find out if liblsl already present on system and usable (if so, link to that instead)
-    // println!("cargo:warning={}", "rebuilding...");
+    println!("cargo:rerun-if-changed=build.rs");
+    for p in [
+        "liblsl/CMakeLists.txt",
+        "liblsl/cmake",
+        "liblsl/include",
+        "liblsl/src",
+    ] {
+        println!("cargo:rerun-if-changed={}", p);
+    }
+    for v in [
+        "LSL_PUGIXML_SOURCE_DIR",
+        "ANDROID_NDK",
+        "ANDROID_NDK_HOME",
+        "ANDROID_NDK_ROOT",
+    ] {
+        println!("cargo:rerun-if-env-changed={}", v);
+    }
     build_liblsl();
+}
+
+/// Location of a local pugixml checkout to build against, so that the build does not need network
+/// access. liblsl >= 1.17 no longer bundles pugixml and would otherwise fetch it from GitHub.
+fn pugixml_source_dir() -> Option<PathBuf> {
+    if let Some(dir) = env::var_os("LSL_PUGIXML_SOURCE_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    let vendored = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("pugixml");
+    if vendored.join("CMakeLists.txt").exists() {
+        return Some(vendored);
+    }
+    None
+}
+
+fn android_ndk() -> Option<String> {
+    ["ANDROID_NDK", "ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"]
+        .iter()
+        .find_map(|v| env::var(v).ok().filter(|s| !s.is_empty()))
 }
 
 // Build the liblsl library from source using cmake
@@ -12,8 +47,25 @@ fn build_liblsl() {
 
     // build with cmake
     let mut cfg = cmake::Config::new("liblsl");
-    cfg.define("LSL_NO_FANCY_LIBNAME", "ON")
-        .define("LSL_BUILD_STATIC", "ON");
+    cfg.define("LSL_BUILD_STATIC", "ON")
+        // LSL_OPTIMIZATIONS turns on LTO, which with GCC produces bitcode-only objects that
+        // the Rust linker cannot consume.
+        .define("LSL_OPTIMIZATIONS", "OFF")
+        .define("LSL_UNITTESTS", "OFF")
+        .define("LSL_TOOLS", "OFF")
+        .define("LSL_DEBUGLOG", "OFF")
+        .define("LSL_FRAMEWORK", "OFF")
+        .define("LSL_UNIXFOLDERS", "ON")
+        // GNUInstallDirs would pick lib64 on some distros
+        .define("CMAKE_INSTALL_LIBDIR", "lib")
+        // liblsl's debug build turns on verbose logging; always build an optimized library
+        .profile("Release");
+
+    if let Some(dir) = pugixml_source_dir() {
+        cfg.define("FETCHCONTENT_SOURCE_DIR_PUGIXML", &dir)
+            .define("FETCHCONTENT_FULLY_DISCONNECTED", "ON");
+    }
+
     if target.contains("msvc") {
         // override some C/CXX flags that the cmake crate splices in on Windows
         // (these cause the build to fail)...
@@ -30,41 +82,60 @@ fn build_liblsl() {
             .define("CMAKE_C_FLAGS_RELEASE", cxx_args)
             .define("CMAKE_CXX_FLAGS_RELEASE", cxx_args);
     } else if target.contains("android") {
-        let ndk = env::var("ANDROID_NDK").expect("ANDROID_NDK_HOME not set");
-        let host_triplet = env::var("HOST").expect("HOST not set");
-        let host_triplet = host_triplet.split('-');
-
-        let os = host_triplet.clone().nth(2).unwrap();
-        let arch = host_triplet.clone().nth(0).unwrap();
-        let ndk_toolchain = format!("{}/toolchains/llvm/prebuilt/{}-{}/bin/", ndk, os, arch);
-
-        let current_path = env::var_os("PATH").unwrap_or_default();
-        let mut paths = env::split_paths(&current_path).collect::<Vec<_>>();
-        paths.push(ndk_toolchain.into());
-        let new_path = env::join_paths(paths).expect("Failed to join paths");
-        env::set_var("PATH", new_path);
-
-        cfg.define("NDK_PROC_aarch64_ABI", "arm64-v8a")
-            .define("ANDROID_NDK", ndk);
+        let ndk = android_ndk().expect(
+            "set ANDROID_NDK (or ANDROID_NDK_HOME / ANDROID_NDK_ROOT) to build for Android",
+        );
+        let abi = match target.split('-').next().unwrap() {
+            "aarch64" => "arm64-v8a",
+            "armv7" | "thumbv7neon" | "arm" => "armeabi-v7a",
+            "i686" => "x86",
+            "x86_64" => "x86_64",
+            other => panic!("unsupported Android architecture: {}", other),
+        };
+        cfg.define(
+            "CMAKE_TOOLCHAIN_FILE",
+            Path::new(&ndk).join("build/cmake/android.toolchain.cmake"),
+        )
+        .define("ANDROID_ABI", abi)
+        .define("ANDROID_STL", "c++_shared")
+        .define("ANDROID_NDK", &ndk);
+        if let Ok(level) = env::var("ANDROID_PLATFORM") {
+            cfg.define("ANDROID_PLATFORM", level);
+        }
     }
     let install_dir = cfg.build();
 
     // emit link directives
-    let libdir = install_dir.join("lib");
-    let libname = "lsl";
     println!(
         "cargo:rustc-link-search=native={}",
-        libdir.to_str().unwrap()
+        install_dir.join("lib").display()
     );
-    println!("cargo:rustc-link-lib=static={}", libname);
+    println!("cargo:rustc-link-lib=static=lsl");
+
+    // pugixml is built as a separate static library and not merged into liblsl.a
+    let pugi_build = install_dir.join("build/_deps/pugixml-build");
+    println!("cargo:rustc-link-search=native={}", pugi_build.display());
+    // multi-config generators (Visual Studio, Xcode) put the archive in a per-config subdir
+    println!(
+        "cargo:rustc-link-search=native={}",
+        pugi_build.join("Release").display()
+    );
+    println!("cargo:rustc-link-lib=static=pugixml");
 
     // make sure we also link some additional libs
-    if target.contains("linux") && !target.contains("android") {
+    if target.contains("android") {
+        // links libc++_shared.so, which the app must ship alongside the Rust library
+        println!("cargo:rustc-link-lib=dylib=c++_shared");
+    } else if target.contains("linux") {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     } else if target.contains("windows") {
-        // TODO: this is a shortcoming in the current cmake file, which should be
-        //       linking in this library (once this is fixed, we should remove this)
-        println!("cargo:rustc-link-lib=dylib=bcrypt");
+        if target.contains("gnu") {
+            println!("cargo:rustc-link-lib=dylib=stdc++");
+        }
+        // system libraries liblsl depends on; a static archive does not carry these along
+        for lib in ["iphlpapi", "winmm", "mswsock", "ws2_32", "bcrypt"] {
+            println!("cargo:rustc-link-lib=dylib={}", lib);
+        }
     } else {
         println!("cargo:rustc-link-lib=dylib=c++");
     }

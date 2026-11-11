@@ -1,6 +1,4 @@
 /** Example program that shows how to continuously resolve streams on the network. */
-use lsl;
-
 fn main() -> Result<(), lsl::Error> {
     // we create a new resolver that resolves all streams on the network (see also new_with_prop()
     // and new_with_pred() for more targeted queries); the parameter is the duration after which
