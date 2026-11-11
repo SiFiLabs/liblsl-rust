@@ -1,3 +1,6 @@
 [submodule "lsl-sys/liblsl"]
 	path = lsl-sys/liblsl
 	url = https://github.com/sccn/liblsl
+[submodule "lsl-sys/pugixml"]
+	path = lsl-sys/pugixml
+	url = https://github.com/zeux/pugixml
